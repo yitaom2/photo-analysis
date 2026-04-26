@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的照片地图</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #1a1a2e; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; }
+
+  #topbar {
+    display: flex; align-items: center; gap: 16px; padding: 10px 16px;
+    background: #16213e; border-bottom: 1px solid #0f3460; flex-shrink: 0;
+  }
+  #topbar h1 { font-size: 16px; font-weight: 600; color: #e94560; white-space: nowrap; }
+  .timeline-wrap { flex: 1; min-width: 180px; max-width: 480px; display: flex; flex-direction: column; gap: 5px; }
+  .timeline-dates { display: flex; justify-content: space-between; font-size: 12px; color: #aaa; user-select: none; }
+  .range-slider { position: relative; height: 18px; display: flex; align-items: center; }
+  .range-track {
+    position: absolute; left: 0; right: 0; height: 4px;
+    background: #0f3460; border-radius: 2px;
+  }
+  .range-fill {
+    position: absolute; height: 4px;
+    background: #e94560; border-radius: 2px; pointer-events: none;
+  }
+  .thumb {
+    position: absolute; width: 100%; height: 100%;
+    -webkit-appearance: none; appearance: none;
+    background: transparent; pointer-events: none;
+    margin: 0; padding: 0;
+  }
+  .thumb::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 15px; height: 15px; border-radius: 50%;
+    background: #e94560; border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.5);
+    cursor: grab; pointer-events: all;
+  }
+  .thumb::-moz-range-thumb {
+    width: 15px; height: 15px; border-radius: 50%;
+    background: #e94560; border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.5);
+    cursor: grab; pointer-events: all; border: 2px solid #fff;
+  }
+  .thumb:active::-webkit-slider-thumb { cursor: grabbing; }
+  .thumb:active::-moz-range-thumb { cursor: grabbing; }
+  #count { font-size: 13px; color: #aaa; margin-left: 8px; white-space: nowrap; }
+  #btn-reset {
+    margin-left: auto; padding: 4px 12px; background: #0f3460; border: 1px solid #e94560;
+    color: #e94560; border-radius: 4px; cursor: pointer; font-size: 13px;
+  }
+  #btn-reset:hover { background: #e94560; color: #fff; }
+
+  #main { display: flex; flex: 1; overflow: hidden; }
+  #map { flex: 1; }
+
+  #panel {
+    width: 340px; background: #16213e; border-left: 1px solid #0f3460;
+    display: flex; flex-direction: column; overflow: hidden;
+    transition: width 0.2s ease;
+  }
+  #panel.hidden { width: 0; border: none; }
+
+  #panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; border-bottom: 1px solid #0f3460; flex-shrink: 0;
+  }
+  #panel-location { font-size: 14px; font-weight: 600; color: #e94560; }
+  #panel-subtitle { font-size: 12px; color: #888; margin-top: 2px; }
+  #panel-close {
+    background: none; border: none; color: #aaa; font-size: 18px; cursor: pointer;
+    padding: 0 4px; line-height: 1;
+  }
+  #panel-close:hover { color: #e94560; }
+
+  #thumbnails {
+    padding: 10px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+    align-content: start; overflow-y: auto;
+  }
+  #view-all-link {
+    display: block; text-align: center; padding: 10px 14px 14px;
+    color: #e94560; font-size: 13px; cursor: pointer; text-decoration: underline;
+    flex-shrink: 0; border-top: 1px solid #0f3460; margin-top: 4px;
+  }
+  #view-all-link:hover { color: #fff; }
+  .thumb-wrap {
+    aspect-ratio: 1; overflow: hidden; border-radius: 4px; cursor: pointer;
+    background: #0f3460; position: relative;
+  }
+  .thumb-wrap img {
+    width: 100%; height: 100%; object-fit: cover;
+    transition: transform 0.15s ease;
+  }
+  .thumb-wrap:hover img { transform: scale(1.05); }
+  .thumb-wrap .thumb-date {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: rgba(0,0,0,0.6); color: #ccc; font-size: 9px;
+    padding: 2px 4px; text-align: center;
+  }
+
+  /* ── palette control ── */
+  .palette-btn {
+    font-size: 16px; line-height: 26px !important;
+    display: block; text-align: center;
+    text-decoration: none;
+  }
+  .palette-popup {
+    position: absolute; left: 34px; top: 0;
+    background: #16213e; border: 1px solid #0f3460;
+    border-radius: 6px; padding: 8px; display: none;
+    flex-wrap: wrap; gap: 6px; width: 116px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.5); z-index: 1000;
+  }
+  .palette-popup.open { display: flex; }
+  .color-swatch {
+    width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
+    border: 2px solid transparent; transition: transform .12s;
+  }
+  .color-swatch:hover { transform: scale(1.2); }
+  .color-swatch.selected { border-color: #fff; }
+
+  /* ── heatmap toggle button ── */
+  .heatmap-btn {
+    font-size: 14px; line-height: 26px !important;
+    display: block; text-align: center; text-decoration: none;
+  }
+  .heatmap-btn.active { background: #eee; }
+
+  /* ── heatmap legend ── */
+  #heatmap-legend {
+    display: none; position: absolute; bottom: 30px; right: 10px;
+    background: rgba(255,255,255,0.92); border-radius: 6px;
+    padding: 8px 10px; font-size: 12px; color: #333;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3); z-index: 800; line-height: 1.8;
+    min-width: 130px;
+  }
+  #heatmap-legend.visible { display: block; }
+  .legend-row { display: flex; align-items: center; gap: 6px; }
+  .legend-swatch { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; }
+  #legend-resolution {
+    font-size: 11px; color: #666; margin-bottom: 6px;
+    padding-bottom: 6px; border-bottom: 1px solid #ddd;
+  }
+
+  /* ── gallery overlay ── */
+  #gallery {
+    display: none; position: fixed; inset: 0; z-index: 9999;
+    background: rgba(10,10,20,0.97); flex-direction: column;
+  }
+  #gallery.open { display: flex; }
+  #gallery-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px; border-bottom: 1px solid #0f3460; flex-shrink: 0;
+  }
+  #gallery-title { font-size: 15px; font-weight: 600; color: #e94560; }
+  #gallery-subtitle { font-size: 12px; color: #888; margin-top: 3px; }
+  #gallery-close {
+    background: none; border: none; color: #aaa; font-size: 22px;
+    cursor: pointer; padding: 0 4px; line-height: 1;
+  }
+  #gallery-close:hover { color: #e94560; }
+  #gallery-grid {
+    flex: 1; overflow-y: auto; padding: 4px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-auto-rows: 150px;
+    gap: 3px; align-content: start;
+  }
+  #gallery-grid .thumb-wrap {
+    height: 150px; aspect-ratio: unset;
+  }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>📍 我的照片地图</h1>
+  <div class="timeline-wrap">
+    <div class="timeline-dates">
+      <span id="label-from"></span>
+      <span id="label-to"></span>
+    </div>
+    <div class="range-slider">
+      <div class="range-track"></div>
+      <div class="range-fill" id="range-fill"></div>
+      <input type="range" class="thumb" id="range-from">
+      <input type="range" class="thumb" id="range-to">
+    </div>
+  </div>
+  <span id="count"></span>
+  <button id="btn-reset">全部显示</button>
+</div>
+
+<div id="main">
+  <div id="map"></div>
+  <div id="panel" class="hidden">
+    <div id="panel-header">
+      <div>
+        <div id="panel-location"></div>
+        <div id="panel-subtitle"></div>
+      </div>
+      <button id="panel-close">✕</button>
+    </div>
+    <div id="thumbnails"></div>
+    <a id="view-all-link" style="display:none"></a>
+  </div>
+</div>
+
+<!-- heatmap legend -->
+<div id="heatmap-legend">
+  <div id="legend-resolution"></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#ffffb2"></div>1–3 张</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#addd8e"></div>4–15 张</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#31a354"></div>16–50 张</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#006837"></div>51+ 张</div>
+</div>
+
+<!-- full-screen gallery overlay -->
+<div id="gallery">
+  <div id="gallery-header">
+    <div>
+      <div id="gallery-title"></div>
+      <div id="gallery-subtitle"></div>
+    </div>
+    <button id="gallery-close">✕</button>
+  </div>
+  <div id="gallery-grid"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+const IMMICH_URL = "http://localhost:2283";
+const API_KEY = "YOUR_API_KEY_HERE";
+const MAX_PREVIEW = 12;
+
+let dotColor = "#34a853";
+let currentPoints = [];
+
+const map = L.map("map", { zoomControl: true }).setView([30, 15], 3);
+const tileNormal = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: "© OpenStreetMap contributors", maxZoom: 19,
+});
+const tileLight = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+  attribution: "© OpenStreetMap contributors © CARTO", maxZoom: 19,
+});
+tileNormal.addTo(map);
+
+let allPoints = [];
+let clusterGroup = null;
+
+// ── palette control ───────────────────────────────────────────────────────────
+
+const PALETTE_COLORS = ["#e94560","#4285f4","#34a853","#fbbc04","#ab47bc","#ff7043","#00bcd4","#ffffff"];
+
+const PaletteControl = L.Control.extend({
+  options: { position: "topleft" },
+  onAdd() {
+    const container = L.DomUtil.create("div", "leaflet-bar leaflet-control");
+    const btn = L.DomUtil.create("a", "palette-btn", container);
+    btn.href = "#"; btn.title = "选择颜色"; btn.innerHTML = "🎨";
+
+    const popup = L.DomUtil.create("div", "palette-popup", container);
+
+    PALETTE_COLORS.forEach(color => {
+      const swatch = L.DomUtil.create("div", "color-swatch", popup);
+      swatch.style.background = color;
+      if (color === dotColor) swatch.classList.add("selected");
+      L.DomEvent.on(swatch, "click", e => {
+        L.DomEvent.stopPropagation(e);
+        dotColor = color;
+        popup.querySelectorAll(".color-swatch").forEach(s => s.classList.remove("selected"));
+        swatch.classList.add("selected");
+        popup.classList.remove("open");
+        renderMarkers(currentPoints);
+      });
+    });
+
+    L.DomEvent.on(btn, "click", e => {
+      L.DomEvent.stopPropagation(e);
+      L.DomEvent.preventDefault(e);
+      popup.classList.toggle("open");
+    });
+
+    document.addEventListener("click", () => popup.classList.remove("open"));
+    L.DomEvent.disableClickPropagation(container);
+    return container;
+  },
+});
+new PaletteControl().addTo(map);
+
+// ── heatmap control ───────────────────────────────────────────────────────────
+
+let heatmapMode = false;
+let heatLayer = null;
+
+// zoom IN → switch to finer grid earlier (lower thresholds)
+const ZOOM_GRID_IN = [
+  { minZoom: 0,  deg: 1,     label: "1° ≈ 110km" },
+  { minZoom: 5,  deg: 0.5,   label: "0.5° ≈ 55km" },
+  { minZoom: 7,  deg: 0.1,   label: "0.1° ≈ 11km" },
+  { minZoom: 9,  deg: 0.05,  label: "0.05° ≈ 5.5km" },
+  { minZoom: 11, deg: 0.02,  label: "0.02° ≈ 2.2km" },
+  { minZoom: 13, deg: 0.01,  label: "0.01° ≈ 1.1km" },
+  { minZoom: 15, deg: 0.005, label: "0.005° ≈ 550m" },
+  { minZoom: 17, deg: 0.001, label: "0.001° ≈ 110m" },
+];
+// zoom OUT → switch back to coarser grid later (higher thresholds)
+const ZOOM_GRID_OUT = [
+  { minZoom: 0,  deg: 1,     label: "1° ≈ 110km" },
+  { minZoom: 7,  deg: 0.5,   label: "0.5° ≈ 55km" },
+  { minZoom: 9,  deg: 0.1,   label: "0.1° ≈ 11km" },
+  { minZoom: 11, deg: 0.05,  label: "0.05° ≈ 5.5km" },
+  { minZoom: 13, deg: 0.02,  label: "0.02° ≈ 2.2km" },
+  { minZoom: 15, deg: 0.01,  label: "0.01° ≈ 1.1km" },
+  { minZoom: 17, deg: 0.005, label: "0.005° ≈ 550m" },
+  { minZoom: 19, deg: 0.001, label: "0.001° ≈ 110m" },
+];
+
+let prevZoom = null;
+map.on("zoomstart", () => { prevZoom = map.getZoom(); });
+
+function gridDeg() {
+  const z = map.getZoom();
+  const zoomingIn = prevZoom === null || z >= prevZoom;
+  const table = zoomingIn ? ZOOM_GRID_IN : ZOOM_GRID_OUT;
+  return [...table].reverse().find(r => z >= r.minZoom) || table[0];
+}
+
+const HEAT_LEVELS = [
+  { max: 3,        t: 0.18, label: "1–3 张" },
+  { max: 15,       t: 0.5,  label: "4–15 张" },
+  { max: 50,       t: 1.0,  label: "16–50 张" },
+  { max: Infinity, t: 1.6,  label: "51+ 张" },
+];
+
+function hexToRgb(hex) {
+  return [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+}
+
+// t ∈ [0,1]: white → color;  t ∈ (1,2]: color → black
+function scaleColor(rgb, t) {
+  const ch = t <= 1
+    ? rgb.map(c => Math.round(255 * (1 - t) + c * t))
+    : rgb.map(c => Math.round(c * (2 - t)));
+  return `rgb(${ch.join(",")})`;
+}
+
+function heatColor(count) {
+  const rgb = hexToRgb(dotColor === "#ffffff" ? "#888888" : dotColor);
+  const level = HEAT_LEVELS.find(s => count <= s.max) || HEAT_LEVELS.at(-1);
+  return scaleColor(rgb, level.t);
+}
+
+function updateLegendSwatches() {
+  const rgb = hexToRgb(dotColor === "#ffffff" ? "#888888" : dotColor);
+  document.querySelectorAll(".legend-swatch").forEach((el, i) => {
+    el.style.background = scaleColor(rgb, HEAT_LEVELS[i].t);
+  });
+}
+
+function computeGrid(points, deg) {
+  const cells = {};
+  points.forEach(p => {
+    const clat = Math.floor(p.lat / deg) * deg;
+    const clng = Math.floor(p.lng / deg) * deg;
+    const key = `${clat},${clng}`;
+    if (!cells[key]) cells[key] = { clat, clng, pts: [] };
+    cells[key].pts.push(p);
+  });
+  return Object.values(cells);
+}
+
+function renderHeatmap() {
+  if (heatLayer) map.removeLayer(heatLayer);
+  heatLayer = L.layerGroup();
+  const { deg, label } = gridDeg();
+  document.getElementById("legend-resolution").textContent = `精细度：${label}`;
+  computeGrid(currentPoints, deg).forEach(({ clat, clng, pts }) => {
+    const rect = L.rectangle(
+      [[clat, clng], [clat + deg, clng + deg]],
+      { color: "none", fillColor: heatColor(pts.length), fillOpacity: 0.65, weight: 0 }
+    );
+    const cities = pts.map(p => locationLabel(p)).filter(Boolean);
+    const topCity = cities.sort((a, b) =>
+      cities.filter(v => v === b).length - cities.filter(v => v === a).length
+    )[0] || `${clat.toFixed(2)}°, ${clng.toFixed(2)}°`;
+    rect.on("click", () => openPanelForPoints(pts, topCity));
+    heatLayer.addLayer(rect);
+  });
+  heatLayer.addTo(map);
+  updateLegendSwatches();
+  document.getElementById("heatmap-legend").classList.add("visible");
+}
+
+function clearHeatmap() {
+  if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
+  document.getElementById("heatmap-legend").classList.remove("visible");
+}
+
+const HeatmapControl = L.Control.extend({
+  options: { position: "topleft" },
+  onAdd() {
+    const container = L.DomUtil.create("div", "leaflet-bar leaflet-control");
+    const btn = L.DomUtil.create("a", "heatmap-btn", container);
+    btn.href = "#"; btn.title = "切换热力图";
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+      <rect x="0" y="0" width="6" height="6" opacity="0.25"/>
+      <rect x="8" y="0" width="6" height="6" opacity="0.5"/>
+      <rect x="0" y="8" width="6" height="6" opacity="0.75"/>
+      <rect x="8" y="8" width="6" height="6" opacity="1"/>
+    </svg>`;
+    L.DomEvent.on(btn, "click", e => {
+      L.DomEvent.stopPropagation(e); L.DomEvent.preventDefault(e);
+      heatmapMode = !heatmapMode;
+      btn.classList.toggle("active", heatmapMode);
+      if (heatmapMode) {
+        map.removeLayer(tileNormal); tileLight.addTo(map);
+        if (clusterGroup) map.removeLayer(clusterGroup);
+        renderHeatmap();
+      } else {
+        map.removeLayer(tileLight); tileNormal.addTo(map);
+        clearHeatmap();
+        if (clusterGroup) map.addLayer(clusterGroup);
+      }
+    });
+    L.DomEvent.disableClickPropagation(container);
+    return container;
+  },
+});
+new HeatmapControl().addTo(map);
+
+map.on("zoomend", () => { if (heatmapMode) renderHeatmap(); });
+
+// ── data loading ─────────────────────────────────────────────────────────────
+
+fetch("gps_data.json")
+  .then(r => r.json())
+  .then(data => {
+    allPoints = data;
+    initSlider(data);
+    renderMarkers(data);
+  })
+  .catch(err => {
+    document.getElementById("count").textContent = "⚠ 无法加载 gps_data.json";
+    console.error(err);
+  });
+
+// ── rendering ────────────────────────────────────────────────────────────────
+
+function renderMarkers(points) {
+  currentPoints = points;
+  if (clusterGroup) map.removeLayer(clusterGroup);
+
+  clusterGroup = L.markerClusterGroup({
+    maxClusterRadius: 50,
+    showCoverageOnHover: false,
+    iconCreateFunction(cluster) {
+      const n = cluster.getChildCount();
+      const sz = n < 10 ? 32 : n < 50 ? 40 : 48;
+      return L.divIcon({
+        html: `<div style="width:${sz}px;height:${sz}px;border-radius:50%;background:${dotColor};
+                    display:flex;align-items:center;justify-content:center;
+                    color:#fff;font-size:${sz < 40 ? 11 : 13}px;font-weight:700;
+                    border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)">${n}</div>`,
+        className: "", iconSize: [sz, sz], iconAnchor: [sz/2, sz/2],
+      });
+    },
+  });
+
+  points.forEach(p => {
+    const marker = L.circleMarker([p.lat, p.lng], {
+      radius: 7, fillColor: dotColor, color: "#fff",
+      weight: 1.5, opacity: 1, fillOpacity: 0.9,
+    });
+    marker.point = p;
+    marker.on("click", () => openPanelForPoints([p], locationLabel(p)));
+    clusterGroup.addLayer(marker);
+  });
+
+  // cluster click: zoom in AND show all photos in cluster
+  clusterGroup.on("clusterclick", function(e) {
+    const childPoints = e.layer.getAllChildMarkers().map(m => m.point);
+    const label = `${childPoints.length} 张照片`;
+    // derive location from most common city in cluster
+    const cities = childPoints.map(p => locationLabel(p)).filter(Boolean);
+    const topCity = cities.sort((a,b) =>
+      cities.filter(v=>v===b).length - cities.filter(v=>v===a).length
+    )[0] || label;
+    openPanelForPoints(childPoints, topCity);
+    // default zoom behavior continues (don't stopPropagation)
+  });
+
+  if (!heatmapMode) map.addLayer(clusterGroup);
+  if (heatmapMode) renderHeatmap();
+  document.getElementById("count").textContent = `${points.length} 张照片`;
+}
+
+// ── photo panel ───────────────────────────────────────────────────────────────
+
+function locationLabel(p) {
+  return p.city
+    ? [p.city, p.state, p.country].filter(Boolean).join(", ")
+    : `${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}`;
+}
+
+function makeThumbnail(p) {
+  const wrap = document.createElement("div");
+  wrap.className = "thumb-wrap";
+  wrap.title = p.date;
+  wrap.onclick = () => window.open(`${IMMICH_URL}/photos/${p.id}`, "_blank");
+
+  const img = document.createElement("img");
+  img.src = `${IMMICH_URL}/api/assets/${p.id}/thumbnail?size=preview&apiKey=${API_KEY}`;
+  img.loading = "lazy";
+  img.alt = p.date;
+
+  const dateLabel = document.createElement("div");
+  dateLabel.className = "thumb-date";
+  dateLabel.textContent = p.date;
+
+  wrap.appendChild(img);
+  wrap.appendChild(dateLabel);
+  return wrap;
+}
+
+function openPanelForPoints(photos, title) {
+  const sorted = [...photos].sort((a, b) => a.date.localeCompare(b.date));
+
+  document.getElementById("panel-location").textContent = title;
+  document.getElementById("panel-subtitle").textContent = `${sorted.length} 张照片`;
+
+  const grid = document.getElementById("thumbnails");
+  grid.innerHTML = "";
+  const preview = sorted.slice(0, MAX_PREVIEW);
+  preview.forEach(p => grid.appendChild(makeThumbnail(p)));
+
+  const link = document.getElementById("view-all-link");
+  link.textContent = `查看全部 ${sorted.length} 张照片 →`;
+  link.style.display = "block";
+  link.onclick = () => openGallery(sorted, title);
+
+  document.getElementById("panel").classList.remove("hidden");
+}
+
+function closePanel() {
+  document.getElementById("panel").classList.add("hidden");
+}
+
+document.getElementById("panel-close").addEventListener("click", closePanel);
+
+// ── full gallery overlay ──────────────────────────────────────────────────────
+
+function openGallery(photos, title) {
+  document.getElementById("gallery-title").textContent = title;
+  document.getElementById("gallery-subtitle").textContent = `${photos.length} 张照片`;
+
+  const grid = document.getElementById("gallery-grid");
+  grid.innerHTML = "";
+  photos.forEach(p => grid.appendChild(makeThumbnail(p)));
+
+  document.getElementById("gallery").classList.add("open");
+  history.pushState({ gallery: true }, "");
+}
+
+function closeGallery() {
+  document.getElementById("gallery").classList.remove("open");
+  document.getElementById("gallery-grid").innerHTML = "";
+}
+
+document.getElementById("gallery-close").addEventListener("click", () => {
+  history.back();
+});
+document.getElementById("gallery").addEventListener("click", e => {
+  if (e.target === document.getElementById("gallery")) history.back();
+});
+
+window.addEventListener("popstate", e => {
+  if (document.getElementById("gallery").classList.contains("open")) {
+    closeGallery();
+  }
+});
+
+// ── timeline slider ───────────────────────────────────────────────────────────
+
+const sliderFrom = document.getElementById("range-from");
+const sliderTo   = document.getElementById("range-to");
+const fill       = document.getElementById("range-fill");
+const labelFrom  = document.getElementById("label-from");
+const labelTo    = document.getElementById("label-to");
+
+function dateToDays(str) { return Math.round(new Date(str).getTime() / 86400000); }
+function daysToDate(d)   { return new Date(d * 86400000).toISOString().slice(0, 10); }
+
+function updateFill() {
+  const min = +sliderFrom.min, max = +sliderFrom.max;
+  const l = (+sliderFrom.value - min) / (max - min) * 100;
+  const r = (+sliderTo.value   - min) / (max - min) * 100;
+  fill.style.left  = l + "%";
+  fill.style.width = (r - l) + "%";
+  labelFrom.textContent = daysToDate(+sliderFrom.value);
+  labelTo.textContent   = daysToDate(+sliderTo.value);
+}
+
+function initSlider(points) {
+  const dates = points.map(p => p.date).filter(Boolean).sort();
+  if (!dates.length) return;
+  const minD = dateToDays(dates[0]);
+  const maxD = dateToDays(dates[dates.length - 1]);
+  [sliderFrom, sliderTo].forEach(s => { s.min = minD; s.max = maxD; s.step = 1; });
+  sliderFrom.value = minD;
+  sliderTo.value   = maxD;
+  updateFill();
+}
+
+function applyFilter() {
+  const from = daysToDate(+sliderFrom.value);
+  const to   = daysToDate(+sliderTo.value);
+  const filtered = allPoints.filter(p => p.date >= from && p.date <= to);
+  renderMarkers(filtered);
+  closePanel();
+}
+
+sliderFrom.addEventListener("input", () => {
+  if (+sliderFrom.value > +sliderTo.value) sliderFrom.value = sliderTo.value;
+  updateFill(); applyFilter();
+});
+sliderTo.addEventListener("input", () => {
+  if (+sliderTo.value < +sliderFrom.value) sliderTo.value = sliderFrom.value;
+  updateFill(); applyFilter();
+});
+
+document.getElementById("btn-reset").addEventListener("click", () => {
+  sliderFrom.value = sliderFrom.min;
+  sliderTo.value   = sliderTo.max;
+  updateFill();
+  renderMarkers(allPoints);
+  closePanel();
+});
+</script>
+</body>
+</html>
