@@ -318,10 +318,10 @@ function scaleColor(rgb, t) {
 function buildGradient() {
   const rgb = hexToRgb(dotColor === "#ffffff" ? "#888888" : dotColor);
   return {
-    0.2: scaleColor(rgb, 0.2),
-    0.5: scaleColor(rgb, 0.6),
-    0.8: scaleColor(rgb, 1.0),
-    1.0: scaleColor(rgb, 1.6),
+    0.18: scaleColor(rgb, 0.28),
+    0.48: scaleColor(rgb, 0.68),
+    0.78: scaleColor(rgb, 1.08),
+    1.0:  scaleColor(rgb, 1.65),
   };
 }
 
@@ -344,7 +344,7 @@ function renderHeatmap() {
   const r = heatRadius();
   heatLayer = L.heatLayer(
     currentPoints.map(p => [p.lat, p.lng, 1]),
-    { radius: r, blur: Math.round(r * 0.65), minOpacity: 0.35, gradient: buildGradient() }
+    { radius: r, blur: Math.round(r * 0.65), minOpacity: 0.41, gradient: buildGradient() }
   );
   heatLayer.addTo(map);
   updateLegendGradient();

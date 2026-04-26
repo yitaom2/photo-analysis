@@ -33,7 +33,7 @@ def export_gps_data(out_file="gps_data.json"):
         body = {"size": 1000, "withExif": True}
         if next_page:
             body["page"] = next_page
-        data = api_post(base_url, api_key, "/search/metadata", body)
+        data = api_post(base_url, api_key, "/api/search/metadata", body)
 
         items = data.get("assets", {}).get("items", [])
         for a in items:
